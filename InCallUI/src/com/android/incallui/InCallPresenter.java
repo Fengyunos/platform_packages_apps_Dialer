@@ -1931,7 +1931,7 @@ public class InCallPresenter implements CallList.Listener,
         return mPowerManager.isInteractive();
     }
 
-    private void wakeUpScreen() {
+    public void wakeUpScreen() {
         if (!isScreenInteractive()) {
             acquireWakeLock();
             releaseWakeLock();
