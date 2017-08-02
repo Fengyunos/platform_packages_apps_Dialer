@@ -63,7 +63,6 @@ LOCAL_STATIC_JAVA_LIBRARIES := \
     guava \
     libphonenumber \
     ims-ext-common \
-    phonebook_wrapper \
     telephony-common
 
 
