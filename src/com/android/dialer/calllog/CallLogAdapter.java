@@ -68,6 +68,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Pattern;
 
+import com.sudamod.sdk.phonelocation.PhoneUtil;
+
 /**
  * Adapter class to fill in data for the Call Log.
  */
@@ -553,7 +555,7 @@ public class CallLogAdapter extends GroupingListAdapter
         details.date = c.getLong(CallLogQuery.DATE);
         details.duration = c.getLong(CallLogQuery.DURATION);
         details.features = getCallFeatures(c, count);
-        details.geocode = c.getString(CallLogQuery.GEOCODED_LOCATION);
+        details.geocode = PhoneUtil.getPhoneUtil(mContext).getLocalNumberInfo(number);
         details.transcription = c.getString(CallLogQuery.TRANSCRIPTION);
         details.callTypes = getCallTypes(c, count);
 

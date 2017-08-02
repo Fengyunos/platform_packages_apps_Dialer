@@ -1,0 +1,253 @@
+From 004eba04024ff33b716ddca2d95003c18282f107 Mon Sep 17 00:00:00 2001
+From: sdhz151 <yanghui150@gmail.com>
+Date: Wed, 7 Dec 2016 14:21:15 +0800
+Subject: [PATCH] =?UTF-8?q?=E9=80=9A=E8=AF=9D=E5=BD=92=E5=B1=9E=E5=9C=B0?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Change-Id: I4c29f1ba9f40c3d463d317978fb9f8998cc251ae
+---
+ Android.mk                                          |  3 +++
+ .../src/com/android/incallui/CallCardFragment.java  | 21 +++++++++++++++++++++
+ .../src/com/android/incallui/CallCardPresenter.java | 13 +++++++++++--
+ .../src/com/android/incallui/ContactInfoCache.java  | 10 +++++++++-
+ .../src/com/android/incallui/StatusBarNotifier.java | 11 +++++++++++
+ src/com/android/dialer/calllog/CallLogAdapter.java  |  4 ++--
+ .../dialer/calllog/CallLogAsyncTaskUtil.java        |  3 ++-
+ .../dialer/calllog/PhoneCallDetailsHelper.java      |  3 ++-
+ 8 files changed, 61 insertions(+), 7 deletions(-)
+
+diff --git a/Android.mk b/Android.mk
+index eec674b96..09a8399ba 100755
+--- a/Android.mk
++++ b/Android.mk
+@@ -67,6 +67,9 @@ LOCAL_STATIC_JAVA_LIBRARIES := \
+     phonebook_wrapper \
+     telephony-common
+ 
++LOCAL_STATIC_JAVA_LIBRARIES += libSudaSdk
++LOCAL_STATIC_JAVA_LIBRARIES += libSudaPinYin
++
+ LOCAL_PACKAGE_NAME := Dialer
+ LOCAL_CERTIFICATE := shared
+ LOCAL_PRIVILEGED_MODULE := true
+diff --git a/InCallUI/src/com/android/incallui/CallCardFragment.java b/InCallUI/src/com/android/incallui/CallCardFragment.java
+index eaee0c7b1..6aa923ed2 100644
+--- a/InCallUI/src/com/android/incallui/CallCardFragment.java
++++ b/InCallUI/src/com/android/incallui/CallCardFragment.java
+@@ -79,6 +79,10 @@
+ 
+ import java.util.List;
+ 
++import com.sudamod.sdk.phonelocation.PhoneUtil;
++import com.sudamod.sdk.phonelocation.PhoneUtil.CallBack;
++import android.suda.utils.SudaUtils;
++
+ /**
+  * Fragment for call card.
+  */
+@@ -736,6 +740,23 @@ public void setPrimary(String number, String name, boolean nameIsNumber, String
+         // Set the label (Mobile, Work, etc)
+         setPrimaryLabel(label);
+ 
++        if (SudaUtils.isSupportLanguage(true) && !TextUtils.isEmpty(name)
++                   && nameIsNumber) {
++            PhoneUtil.getPhoneUtil(getActivity()).getOnlineNumberInfo(name, new CallBack() {
++                    public void execute(final String response) {
++                        if(getActivity() == null)
++                            return;	
++                        getActivity().runOnUiThread(new Runnable() {
++                            @Override
++                            public void run() {
++                                setPrimaryLabel(response);
++                            }
++                         });
++                     }
++                }
++            );
++        }
++
+         showInternetCallLabel(isSipCall);
+ 
+         setDrawableToImageViews(photo);
+diff --git a/InCallUI/src/com/android/incallui/CallCardPresenter.java b/InCallUI/src/com/android/incallui/CallCardPresenter.java
+index 315b57f34..c99a02d55 100644
+--- a/InCallUI/src/com/android/incallui/CallCardPresenter.java
++++ b/InCallUI/src/com/android/incallui/CallCardPresenter.java
+@@ -61,6 +61,7 @@
+ import java.lang.ref.WeakReference;
+ 
+ import static com.android.contacts.common.compat.CallSdkCompat.Details.PROPERTY_ENTERPRISE_CALL;
++import android.suda.utils.SudaUtils;
+ /**
+  * Presenter for the Call Card Fragment.
+  * <p>
+@@ -97,6 +98,7 @@
+     private boolean mHasShownToast = false;
+     private InCallContactInteractions mInCallContactInteractions;
+     private boolean mIsFullscreen = false;
++    private static boolean isSupportLanguage;
+ 
+     public static class ContactLookupCallback implements ContactInfoCacheCallback {
+         private final WeakReference<CallCardPresenter> mCallCardPresenter;
+@@ -199,6 +201,7 @@ public void onUiReady(CallCardUi ui) {
+         InCallPresenter.getInstance().addIncomingCallListener(this);
+         InCallPresenter.getInstance().addDetailsListener(this);
+         InCallPresenter.getInstance().addInCallEventListener(this);
++        isSupportLanguage = SudaUtils.isSupportLanguage(true);
+     }
+ 
+     @Override
+@@ -912,7 +915,9 @@ private void updatePrimaryDisplayInfo() {
+                     number,
+                     name,
+                     nameIsNumber,
+-                    isChildNumberShown || isCallSubjectShown ? null : mPrimaryContactInfo.label,
++                    isChildNumberShown || isCallSubjectShown ? null : isSupportLanguage ? TextUtils.isEmpty(mPrimaryContactInfo.label) ? mPrimaryContactInfo.location :
++                        TextUtils.isEmpty(mPrimaryContactInfo.location) ? mPrimaryContactInfo.label : mPrimaryContactInfo.label + " "
++                            + mPrimaryContactInfo.location : mPrimaryContactInfo.label,
+                     mPrimaryContactInfo.photo,
+                     mPrimaryContactInfo.isSipCall,
+                     showContactPhoto,
+@@ -1102,7 +1107,11 @@ String getNumberForCall(ContactCacheEntry contactInfo) {
+                     contactInfo.nameAlternative,
+                     mContactsPreferences);
+         if (TextUtils.isEmpty(preferredName)) {
+-            return contactInfo.location;
++            if (!isSupportLanguage) {
++                return contactInfo.location;
++            } else {
++                return "";
++            }
+         }
+         return contactInfo.number;
+     }
+diff --git a/InCallUI/src/com/android/incallui/ContactInfoCache.java b/InCallUI/src/com/android/incallui/ContactInfoCache.java
+index 9d6fc4627..16a3eaa32 100644
+--- a/InCallUI/src/com/android/incallui/ContactInfoCache.java
++++ b/InCallUI/src/com/android/incallui/ContactInfoCache.java
+@@ -52,6 +52,8 @@
+ import org.json.JSONException;
+ import org.json.JSONObject;
+ 
++import com.sudamod.sdk.phonelocation.PhoneUtil;
++import android.suda.utils.SudaUtils;
+ import java.util.Calendar;
+ import java.util.HashMap;
+ import java.util.List;
+@@ -562,7 +564,13 @@ public static void populateCacheEntry(Context context, CallerInfo info, ContactC
+ 
+         cce.namePrimary = displayName;
+         cce.number = displayNumber;
+-        cce.location = displayLocation;
++        String location = PhoneUtil.getPhoneUtil(context).getLocalNumberInfo(cce.number, false);
++        if (!TextUtils.isEmpty(location)) {
++            info.geoDescription = location;
++            cce.location = info.geoDescription;
++        } else {
++            cce.location = displayLocation;
++        }
+         cce.label = label;
+         cce.isSipCall = isSipCall;
+         cce.userType = info.userType;
+diff --git a/InCallUI/src/com/android/incallui/StatusBarNotifier.java b/InCallUI/src/com/android/incallui/StatusBarNotifier.java
+index d08859432..7221964c0 100644
+--- a/InCallUI/src/com/android/incallui/StatusBarNotifier.java
++++ b/InCallUI/src/com/android/incallui/StatusBarNotifier.java
+@@ -68,6 +68,7 @@
+ 
+ import java.util.Objects;
+ import org.codeaurora.ims.QtiCallConstants;
++import android.suda.utils.SudaUtils;
+ 
+ /**
+  * This class adds Notifications to the status bar for the in-call experience.
+@@ -535,6 +536,15 @@ String getContentTitle(ContactCacheEntry contactInfo, Call call) {
+         if (call.isConferenceCall() || call.hasProperty(Details.PROPERTY_GENERIC_CONFERENCE)) {
+             return mContext.getResources().getString(R.string.card_title_conf_call);
+         }
++        if (SudaUtils.isSupportLanguage(true)) {
++            if (TextUtils.isEmpty(contactInfo.namePrimary)) {
++				return TextUtils.isEmpty(contactInfo.number) ? null
++                        : TextUtils.isEmpty(contactInfo.location) ? BidiFormatter.getInstance().unicodeWrap(
++							contactInfo.number.toString(), TextDirectionHeuristics.LTR) : BidiFormatter.getInstance().unicodeWrap(
++								contactInfo.number.toString() + " " + contactInfo.location, TextDirectionHeuristics.LTR);
++            }
++            return !TextUtils.isEmpty(contactInfo.location) ? contactInfo.namePrimary + " " + contactInfo.location : contactInfo.namePrimary;
++        } else {
+         if (TextUtils.isEmpty(contactInfo.namePrimary)) {
+             String contactNumberDisplayed = TextUtils.isEmpty(contactInfo.number) ?
+                     "" : contactInfo.number.toString();
+@@ -548,6 +558,7 @@ String getContentTitle(ContactCacheEntry contactInfo, Call call) {
+         }
+ 
+         return contactInfo.namePrimary;
++        }
+     }
+ 
+     private void addPersonReference(Notification.Builder builder, ContactCacheEntry contactInfo,
+diff --git a/src/com/android/dialer/calllog/CallLogAdapter.java b/src/com/android/dialer/calllog/CallLogAdapter.java
+index 48b4f5564..06719a861 100644
+--- a/src/com/android/dialer/calllog/CallLogAdapter.java
++++ b/src/com/android/dialer/calllog/CallLogAdapter.java
+@@ -66,7 +66,7 @@
+ import java.util.HashMap;
+ import java.util.Map;
+ import java.util.regex.Pattern;
+-
++import com.sudamod.sdk.phonelocation.PhoneUtil;
+ /**
+  * Adapter class to fill in data for the Call Log.
+  */
+@@ -540,7 +540,7 @@ private void bindCallLogListViewHolder(ViewHolder viewHolder, int position) {
+         details.date = c.getLong(CallLogQuery.DATE);
+         details.duration = c.getLong(CallLogQuery.DURATION);
+         details.features = getCallFeatures(c, count);
+-        details.geocode = c.getString(CallLogQuery.GEOCODED_LOCATION);
++        details.geocode = PhoneUtil.getPhoneUtil(mContext).getLocalNumberInfo(number);
+         details.transcription = c.getString(CallLogQuery.TRANSCRIPTION);
+         details.callTypes = getCallTypes(c, count);
+ 
+diff --git a/src/com/android/dialer/calllog/CallLogAsyncTaskUtil.java b/src/com/android/dialer/calllog/CallLogAsyncTaskUtil.java
+index 34b2f0ea9..284aa0f56 100644
+--- a/src/com/android/dialer/calllog/CallLogAsyncTaskUtil.java
++++ b/src/com/android/dialer/calllog/CallLogAsyncTaskUtil.java
+@@ -46,6 +46,7 @@
+ import java.util.ArrayList;
+ import java.util.Arrays;
+ import java.util.Locale;
++import com.sudamod.sdk.phonelocation.PhoneUtil;
+ 
+ public class CallLogAsyncTaskUtil {
+     private static String TAG = CallLogAsyncTaskUtil.class.getSimpleName();
+@@ -234,7 +235,7 @@ private static PhoneCallDetails getPhoneCallDetailsForUri(Context context, Uri c
+             details.date = cursor.getLong(CallDetailQuery.DATE_COLUMN_INDEX);
+             details.duration = cursor.getLong(CallDetailQuery.DURATION_COLUMN_INDEX);
+             details.features = cursor.getInt(CallDetailQuery.FEATURES);
+-            details.geocode = cursor.getString(CallDetailQuery.GEOCODED_LOCATION_COLUMN_INDEX);
++            details.geocode = PhoneUtil.getPhoneUtil(context).getLocalNumberInfo(number);
+             details.transcription = cursor.getString(CallDetailQuery.TRANSCRIPTION_COLUMN_INDEX);
+ 
+             details.countryIso = !TextUtils.isEmpty(countryIso) ? countryIso
+diff --git a/src/com/android/dialer/calllog/PhoneCallDetailsHelper.java b/src/com/android/dialer/calllog/PhoneCallDetailsHelper.java
+index 79e1ebbf7..5f9756590 100644
+--- a/src/com/android/dialer/calllog/PhoneCallDetailsHelper.java
++++ b/src/com/android/dialer/calllog/PhoneCallDetailsHelper.java
+@@ -41,6 +41,7 @@
+ import com.android.dialer.R;
+ import com.android.dialer.calllog.calllogcache.CallLogCache;
+ import com.android.dialer.util.DialerUtils;
++import android.suda.utils.SudaUtils;
+ 
+ import java.util.ArrayList;
+ import java.util.Calendar;
+@@ -245,7 +246,7 @@ public CharSequence getCallTypeOrLocation(PhoneCallDetails details) {
+                 && !PhoneNumberHelper.isUriNumber(details.number.toString())
+                 && !mCallLogCache.isVoicemailNumber(details.accountHandle, details.number)) {
+ 
+-            if (TextUtils.isEmpty(details.namePrimary) && !TextUtils.isEmpty(details.geocode)) {
++            if (!TextUtils.isEmpty(details.geocode) && SudaUtils.isSupportLanguage(true)) {
+                 numberFormattedLabel = details.geocode;
+             } else if (!(details.numberType == Phone.TYPE_CUSTOM
+                     && TextUtils.isEmpty(details.numberLabel))) {
